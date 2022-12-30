@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>jQuery Task 3</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-Zenh87qX5JnK2Jl0vWa8Ck2rdkQ2Bzep5IDxbcnCeuOxjzrPF/et3URy9Bv1WTRi" crossorigin="anonymous">
+    <!-- jQuery scripts can be inserted into head instead of body-->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <script>
+        var locations = {}; // locations[id] gives us location with id
+        var devices = {}; //devices[id] gives us device with id
+        var editID = ""; //if "editID" is empty, an Add request will be done, otherwise an Edit request will be done
+
+        function getDeviceInfo() {
+            var url = "/device";
+
+            $.get(url, function (data, status, jqXHR) {
+                data.map((device) => {
+                    devices[device.deviceid] = device;
+                    // add options Search select Device box
+                    selectDeviceBox = document.getElementById('searchDevice');
+                    selectDeviceBox.options.add(new Option(device.shortname, device.deviceid));
+
+                    // add options to Modal select Device Box
+                    modalDeviceBox = document.getElementById('modalDevice');
+                    modalDeviceBox.options.add(new Option(device.shortname, device.deviceid));
+                });
+            }).fail(() => { alert("Error in data connection") });
+        }
+        function getLocationInfo() {
+            var url = "/location";
+
+            $.get(url, function (data, status, jqXHR) {
+                data.map((location) => {
+                    locations[location.locationid] = location;
+
+                    // add options to search select Location Box
+                    selectLocationBox = document.getElementById('searchLocation');
+                    selectLocationBox.options.add(new Option(location.information, location.locationid));
+
+                    // add options to Modal select Location Box
+                    modalLocationBox = document.getElementById('modalLocation');
+                    modalLocationBox.options.add(new Option(location.information, location.locationid));
+                });
+            }).fail(() => { alert("Error in data connection") });
+        }
+
+        function populateData(urlparameters = "") {
+            var tooltipTriggerList;
+            var tooltipList;
+
+            $.get("/measurement?" + urlparameters, function (data, status, jqXHR) {
+                console.log(data);
+                $("#tableBody").empty();
+
+                data.map((measurement) => {
+                    var addStr = `
+                        <tr id="${"id" + measurement.measurementid}">
+                            <td>${new Date(measurement.timestamp).toLocaleString("en-fi")}</td>
+                            <td data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="${locations[measurement.locationid].address}, ${locations[measurement.locationid].longitude}, ${locations[measurement.locationid].latitude}">
+                                ${locations[measurement.locationid].information /*property of locations object*/}
+                            </td>
+                            <td>${measurement.unit}</td>
+                            <td>${measurement.amount}</td>
+                            <td data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="${devices[measurement.deviceid].information}">
+                                ${devices[measurement.deviceid].shortname}
+                            </td>
+                            <td><button onclick="deleteMeasurement('${measurement.measurementid}')">Delete</button></td>
+                            <td><button data-bs-toggle="modal" data-bs-target="#exampleModal" 
+                                onclick="editMeasurement('${measurement.measurementid}')">Edit</button></td>
+                        </tr>`;
+
+                    $("#tableBody").append(addStr);
+
+                    tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+                    tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+                })
+            })
+        }
+
+        //deleting measurement from the server
+        function deleteMeasurement(measurementid) {
+            console.log(measurementid);
+            $.ajax({
+                type: "DELETE", // or get, delete, put and so on...
+                url: "/measurement/" + measurementid,
+            }).done((data, textStatus, jqXHR) => {
+                // here we can define functionality everything is successfull
+                $("#id" + measurementid).remove();
+                console.log(measurementid);
+                alert("Delete success");
+            }).fail(function (jqXHR, textStatus, errorThrown) {
+                // functionality when error occurs can be added here
+                console.log(jqXHR);
+            });
+        }
+
+        //editing measurement from the server by defining an ID value for 'editID'
+        function editMeasurement(measurementid) {
+            console.log(measurementid);
+            editID = measurementid;
+
+            $("#exampleModalLabel").text("Edit Measurement " + measurementid);
+            //fetch data from server based on measurement id to the modal form
+            $.get("/measurement/" + measurementid, function (data) {
+                console.log(data);
+                var editTimestamp = data.timestamp.substring(0, 19);
+                var editLocation = locations[data.locationid].information;
+                var editUnit = data.unit;
+                var editAmount = data.amount;
+                var editDevice = devices[data.deviceid].shortname;
+
+                $("#modalTimestamp").val(editTimestamp);
+                $("#modalLocation option:contains(" + editLocation + ")").prop('selected', true);
+                $("#modalUnit").val(editUnit);
+                $("#modalAmount").val(editAmount);
+                $("#modalDevice option:contains(" + editDevice + ")").prop('selected', true);
+
+            })
+
+            editID = measurementid;
+        }
+
+        function addMeasurement() { //Reset form before adding
+            $("#modalForm").trigger("reset");
+            editID = "";
+        }
+
+        $(document).ready(function () { // because of this row as it's run only after document tree is created
+            //GET Locations Information
+            getLocationInfo();
+
+            //GET Devices Information
+            getDeviceInfo();
+
+            // activate tooltips for demo data
+            tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+            tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+
+            // populateData();
+            populateData();
+
+            $("#searchButt").click(function () {
+                populateData($("#searchField").serialize());
+            })
+
+            $("#modalSaveButton").click(function () {
+                var requestType = editID ? "PUT" : "POST";
+
+                $.ajax({
+                    type: requestType,
+                    url: "/measurement/" + editID, //this decides whether PUT or POST method will be applied by 'editID'
+                    data: {
+                        timestamp: $("#modalTimestamp").val(),
+                        locationid: $("#modalLocation option:selected").val(),
+                        unit: $("#modalUnit").val(),
+                        amount: $("#modalAmount").val(),
+                        deviceid: $("#modalDevice option:selected").val()
+                    }
+                }).done(function (result) {
+                    // here we can define functionality everything is successfull
+                    alert((editID ? "Edit" : "Add") + " Success")
+                    console.log(editID + " Data " + (editID ? "Edited" : "Added"));
+
+                    populateData();
+                    editID = "";
+                }).fail(function (jqXHR, textStatus, errorThrown) {
+                    // functionality when error occurs can be added here
+                    console.log(jqXHR);
+                });
+
+                $("#modalForm").trigger("reset"); // or put empty value in form fields
+                $("#exampleModal").modal("hide");
+            })
+        });
+    </script>
+</head>
+
+<body>
+    <h1>Solution</h1>
+
+    <form id="searchField">
+        <label>Unit: </label>
+        <input type="text" id="searchUnit" name="unit"> &nbsp;
+        <label>Location: </label>
+        <select id="searchLocation" name="locationid">
+            <option selected value> ---- Select an option ---- </option>
+            <!--add options here with jQuery-->
+        </select> &nbsp;
+        <label>Device: </label>
+        <select id="searchDevice" name="deviceid">
+            <option selected value> ---- Select an option ---- </option>
+        </select>
+    </form>
+
+    <p>
+        <button id="searchButt">Search</button>
+    </p>
+
+    <table class="table-bordered">
+        <thead>
+            <tr>
+                <th>Time of measurement</th>
+                <th>Location </th>
+                <th>Measurement unit</th>
+                <th>Amount</th>
+                <th>Device</th>
+                <th>Delete</th>
+                <th>Edit</th>
+            </tr>
+        </thead>
+
+        <tbody id="tableBody">
+        </tbody>
+    </table>
+
+    <!-- Button trigger modal -->
+    <button id="addButton" type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#exampleModal"
+        onclick="addMeasurement()">
+        Add
+    </button>
+
+    <!-- Modal -->
+    <div class="modal fade" id="exampleModal" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h1 class="modal-title fs-5" id="exampleModalLabel">Add measurement</h1>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form class="form" id="modalForm">
+                        <!--input fields are here-->
+                        <label for="modalTimestamp">Timestamp</label>
+                        <input type="datetime-local" id="modalTimestamp"><br>
+                        <label for="modalLocation">Location</label>
+                        <select id="modalLocation">
+                            <option value="">Select</option>
+                            <!--Options will be added in getLocationInfo() function-->
+                        </select><br>
+                        <label for="modalUnit">Measurement unit</label>
+                        <input type="text" id="modalUnit"><br>
+                        <label for="modalAmount">Amount</label>
+                        <input type="text" id="modalAmount"><br>
+                        <label for="modalDevice">Device</label>
+                        <select id="modalDevice" class="selectDevice">
+                            <option value="">Select</option>
+                            <!--Options will be added in getDeviceInfo() function-->
+                        </select><br>
+
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" id="modalSaveButton">Save changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-OERcA2EqjJCMA+/3y+gxIOqMEjwtxJY7qPCqsdltbNJuaOe923+mo//f6V8Qbsw3"
+        crossorigin="anonymous"></script>
+</body>
+
+</html>
